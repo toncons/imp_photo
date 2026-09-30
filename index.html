@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>画像暗号化スプレッドシート連携アプリ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        /* Prevent iOS zoom on input focus by ensuring 16px font size */
+        input, select, textarea { font-size: 16px !important; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 h-full flex flex-col min-h-screen p-0">
+
+    <!-- App wrapper -->
+    <div class="w-full h-full bg-slate-50 flex flex-col overflow-hidden relative flex-1">
+
+    <header class="bg-indigo-600 text-white shadow-md py-4 px-4 flex justify-between items-center shrink-0">
+        <div class="flex items-center space-x-2">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <h1 class="text-base font-bold truncate">Secure Vault</h1>
+        </div>
+        <div class="text-[11px] bg-indigo-700 px-2.5 py-1 rounded-full font-medium">AES-GCM</div>
+    </header>
+
+    <main class="flex-1 p-4 space-y-4 overflow-y-auto">
+        <section class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div>
+                <h2 class="text-base font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 画像の暗号化 & 保存
+                </h2>
+                
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">暗号化パスワード</label>
+                        <input type="password" id="encPassword" placeholder="パスワードを入力" class="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">画像ファイル選択</label>
+                        <input type="file" id="imageFile" accept="image/*" class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
+                    </div>
+
+                    <div id="encPreviewContainer" class="hidden mt-3 text-center">
+                        <p class="text-[11px] text-slate-500 mb-1">プレビュー:</p>
+                        <img id="encPreview" class="max-h-32 rounded-lg border object-contain mx-auto" alt="Preview">
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-100">
+                <button onclick="encryptAndSave()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-xl transition shadow-sm text-sm active:scale-95">
+                    暗号化してシートに保存
+                </button>
+            </div>
+        </section>
+
+        <section class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div>
+                <h2 class="text-base font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-amber-500"></span> 読み込み & 復号化
+                </h2>
+
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">復号化パスワード</label>
+                        <input type="password" id="decPassword" placeholder="保存時と同じパスワード" class="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">レコードID (例: gas001)</label>
+                        <input type="text" id="recordId" placeholder="例: gas001" class="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+
+                    <div id="decPreviewContainer" class="hidden mt-3 text-center">
+                        <p class="text-[11px] text-slate-500 mb-1">復号化プレビュー:</p>
+                        <img id="decPreview" class="max-h-32 rounded-lg border object-contain mx-auto" alt="Decrypted Preview">
+                        <div class="mt-2">
+                            <a id="downloadBtn" download="decrypted.png" class="text-xs text-indigo-600 hover:underline font-medium">画像をダウンロード</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-100">
+                <button onclick="loadAndDecrypt()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-4 rounded-xl transition shadow-sm text-sm active:scale-95">
+                    シートから取得して復号化
+                </button>
+            </div>
+        </section>
+
+        <section class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div>
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-indigo-500"></span> 保存済み一覧
+                    </h2>
+                    <button onclick="fetchRecordsList()" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition">
+                        更新
+                    </button>
+                </div>
+                <div class="overflow-x-auto max-h-48 border rounded-xl">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead class="bg-slate-50 sticky top-0 border-b text-slate-600">
+                            <tr>
+                                <th class="p-2.5">ID</th>
+                                <th class="p-2.5">日時</th>
+                                <th class="p-2.5 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recordsTableBody" class="divide-y divide-slate-100 text-slate-700">
+                            <tr>
+                                <td colspan="3" class="p-3 text-center text-slate-400 text-xs">「更新」を押してデータを取得</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-white border-t border-slate-200 py-3 px-4 text-xs text-slate-500 shrink-0">
+        <div class="flex flex-col gap-2">
+            <div>
+                <span class="text-[11px]">GAS URL: </span>
+                <input type="text" id="gasUrl" placeholder="https://script.google.com/..." class="px-2 py-1 border rounded ml-1 w-full text-xs mt-1">
+            </div>
+        </div>
+    </footer>
+
+    </div>
+
+    <script>
+        // Preview handling
+        const imageFileInput = document.getElementById('imageFile');
+        let selectedFileBase64 = null;
+
+        imageFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (uploadEvent) => {
+                selectedFileBase64 = uploadEvent.target.result;
+                document.getElementById('encPreview').src = selectedFileBase64;
+                document.getElementById('encPreviewContainer').classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Crypto helper functions using Web Crypto API (AES-GCM)
+        async function deriveKey(password, salt) {
+            const enc = new TextEncoder();
+            const keyMaterial = await window.subtle.importKey(
+                "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+            );
+            return window.subtle.deriveKey(
+                { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
+                keyMaterial,
+                { name: "AES-GCM", length: 256 },
+                false,
+                ["encrypt", "decrypt"]
+            );
+        }
+
+        async function encryptData(secretMessage, password) {
+            const salt = window.crypto.getRandomValues(new Uint8Array(16));
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const key = await deriveKey(password, salt);
+            const encoded = new TextEncoder().encode(secretMessage);
+            const encrypted = await window.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, encoded);
+
+            const combined = new Uint8Array(salt.byteLength + iv.byteLength + encrypted.byteLength);
+            combined.set(salt, 0);
+            combined.set(iv, salt.byteLength);
+            combined.set(new Uint8Array(encrypted), salt.byteLength + iv.byteLength);
+
+            return btoa(String.fromCharCode.apply(null, combined));
+        }
+
+        async function decryptData(base64Payload, password) {
+            const binaryString = atob(base64Payload);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            const salt = bytes.slice(0, 16);
+            const iv = bytes.slice(16, 28);
+            const encrypted = bytes.slice(28);
+
+            const key = await deriveKey(password, salt);
+            const decrypted = await window.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, encrypted);
+            return new TextDecoder().decode(decrypted);
+        }
+
+        // Encryption and Save Handler
+        async function encryptAndSave() {
+            const password = document.getElementById('encPassword').value;
+            if (!password) { alertBox("パスワードを入力してください。"); return; }
+            if (!selectedFileBase64) { alertBox("画像を選択してください。"); return; }
+
+            try {
+                const encryptedPayload = await encryptData(selectedFileBase64, password);
+                const gasUrl = document.getElementById('gasUrl').value;
+
+                if (!gasUrl) {
+                    let count = 1;
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key.startsWith('gas') && !key.endsWith('_time')) count++;
+                    }
+                    const mockId = "gas" + ("00" + count).slice(-3);
+                    localStorage.setItem(mockId, encryptedPayload);
+                    localStorage.setItem(mockId + "_time", new Date().toLocaleString());
+                    alertBox("GAS URL未入力のためローカルに保存しました。\nレコードID: " + mockId);
+                    fetchRecordsList();
+                    return;
+                }
+
+                const response = await fetch(gasUrl, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'save', payload: encryptedPayload })
+                });
+                const result = await response.json();
+                if (result.status === 'success') {
+                    alertBox("保存成功！ レコードID: " + result.id);
+                    fetchRecordsList();
+                } else {
+                    alertBox("保存失敗: " + result.message);
+                }
+            } catch (err) {
+                console.error(err);
+                alertBox("暗号化または通信エラーが発生しました。");
+            }
+        }
+
+        // Load and Decrypt Handler
+        async function loadAndDecrypt() {
+            const password = document.getElementById('decPassword').value;
+            const recordId = document.getElementById('recordId').value;
+            if (!password || !recordId) { alertBox("パスワードとレコードIDを入力してください。"); return; }
+
+            try {
+                let encryptedPayload = "";
+                const gasUrl = document.getElementById('gasUrl').value;
+
+                if (!gasUrl) {
+                    encryptedPayload = localStorage.getItem(recordId);
+                    if (!encryptedPayload) { alertBox("指定されたIDのデータがローカルに見つかりません。"); return; }
+                } else {
+                    const response = await fetch(`${gasUrl}?id=${recordId}`);
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        encryptedPayload = result.payload;
+                    } else {
+                        alertBox("データ取得失敗: " + result.message);
+                        return;
+                    }
+                }
+
+                const decryptedBase64 = await decryptData(encryptedPayload, password);
+                document.getElementById('decPreview').src = decryptedBase64;
+                document.getElementById('downloadBtn').href = decryptedBase64;
+                document.getElementById('decPreviewContainer').classList.remove('hidden');
+                alertBox("復号化に成功しました！");
+            } catch (err) {
+                console.error(err);
+                alertBox("復号化に失敗しました。パスワードが間違っているか、データが破損しています。");
+            }
+        }
+
+        // Fetch Records List Handler
+        async function fetchRecordsList() {
+            const tbody = document.getElementById('recordsTableBody');
+            tbody.innerHTML = `<tr><td colspan="3" class="p-3 text-center text-slate-400 text-xs">取得中...</td></tr>`;
+
+            const gasUrl = document.getElementById('gasUrl').value;
+            let records = [];
+
+            try {
+                if (!gasUrl) {
+                    records = [];
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key.startsWith('gas') && !key.endsWith('_time')) {
+                            records.push({
+                                id: key,
+                                timestamp: localStorage.getItem(key + '_time') || '不明'
+                            });
+                        }
+                    }
+                } else {
+                    const response = await fetch(`${gasUrl}?action=list`);
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        records = result.records || [];
+                    } else {
+                        throw new Error(result.message || '取得に失敗しました');
+                    }
+                }
+
+                if (records.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="3" class="p-3 text-center text-slate-400 text-xs">保存されたレコードはありません。</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = records.map(r => `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="p-2.5 font-mono text-xs text-indigo-600 font-medium">${r.id}</td>
+                        <td class="p-2.5 text-[11px] text-slate-500">${new Date(r.timestamp).toLocaleString() || r.timestamp}</td>
+                        <td class="p-2.5 text-right">
+                            <button onclick="selectRecord('${r.id}')" class="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-medium transition">
+                                選択
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+
+            } catch (err) {
+                console.error(err);
+                tbody.innerHTML = `<tr><td colspan="3" class="p-3 text-center text-rose-500 text-xs">取得失敗 (GAS URLを確認)</td></tr>`;
+            }
+        }
+
+        function selectRecord(id) {
+            document.getElementById('recordId').value = id;
+            document.getElementById('decPassword').focus();
+        }
+
+        function alertBox(message) {
+            const existing = document.getElementById('customToast');
+            if (existing) existing.remove();
+
+            const toast = document.createElement('div');
+            toast.id = 'customToast';
+            toast.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-lg z-50 transition-all opacity-0 max-w-xs text-center whitespace-pre-wrap';
+            toast.innerText = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => toast.classList.remove('opacity-0'), 10);
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
