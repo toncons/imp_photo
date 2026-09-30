@@ -74,9 +74,9 @@
 
                     <div id="decPreviewContainer" class="hidden mt-3 text-center">
                         <p class="text-[11px] text-slate-500 mb-1">復号化プレビュー:</p>
-                        <img id="decPreview" class="max-h-32 rounded-lg border object-contain mx-auto" alt="Decrypted Preview">
+                        <img id="decPreview" class="max-h-32 rounded-lg border object-contain mx-auto" alt="Decrypted Preview" onerror="alertBox('画像のプレビュー表示に失敗しました。データが破損しているか、パスワードが間違っている可能性があります。');">
                         <div class="mt-2">
-                            <a id="downloadBtn" download="decrypted.png" class="text-xs text-indigo-600 hover:underline font-medium">画像をダウンロード</a>
+                            <a id="downloadBtn" onclick="downloadDecryptedImage(event)" class="text-xs text-indigo-600 hover:underline font-medium cursor-pointer">画像をダウンロード</a>
                         </div>
                     </div>
                 </div>
@@ -137,6 +137,7 @@
     <script>
         const imageFileInput = document.getElementById('imageFile');
         let selectedFileBase64 = null;
+        let currentDecryptedDataUrl = null;
 
         window.addEventListener('DOMContentLoaded', () => {
             const savedUrl = localStorage.getItem('saved_gas_url');
@@ -180,7 +181,6 @@
             reader.readAsDataURL(file);
         });
 
-        // Safe Web Crypto API getter with secure context check
         function getSubtleCrypto() {
             const subtle = window.crypto && window.crypto.subtle;
             if (!subtle) {
@@ -329,18 +329,37 @@
                 }
 
                 const decryptedBase64 = await decryptData(encryptedPayload, password);
-                document.getElementById('decPreview').src = decryptedBase64;
-                document.getElementById('downloadBtn').href = decryptedBase64;
+                if (!decryptedBase64 || !decryptedBase64.startsWith('data:image/')) {
+                    throw new Error("復号化されたデータが有効な画像形式ではありません。パスワードが間違っている可能性があります。");
+                }
+
+                currentDecryptedDataUrl = decryptedBase64;
+                const decPreview = document.getElementById('decPreview');
+                decPreview.src = decryptedBase64;
                 document.getElementById('decPreviewContainer').classList.remove('hidden');
                 alertBox("復号化に成功しました！");
             } catch (err) {
                 console.error(err);
                 let jpMsg = "復号化に失敗しました。パスワードが間違っているか、データが破損しています。";
-                if (err.message && (err.message.includes('fetch') || err.message.includes('Network') || err.message.includes('Web Crypto') || err.message.includes('サブティル'))) {
+                if (err.message && (err.message.includes('fetch') || err.message.includes('Network') || err.message.includes('Web Crypto') || err.message.includes('有効な画像形式'))) {
                     jpMsg = err.message;
                 }
                 alertBox(jpMsg);
             }
+        }
+
+        function downloadDecryptedImage(e) {
+            e.preventDefault();
+            if (!currentDecryptedDataUrl) {
+                alertBox("ダウンロードする画像データがありません。先に復号化を実行してください。");
+                return;
+            }
+            const a = document.createElement('a');
+            a.href = currentDecryptedDataUrl;
+            a.download = 'decrypted_image.jpg';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
         }
 
         async function fetchRecordsList() {
