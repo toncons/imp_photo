@@ -211,7 +211,15 @@
             combined.set(iv, salt.byteLength);
             combined.set(new Uint8Array(encrypted), salt.byteLength + iv.byteLength);
 
-            return btoa(String.fromCharCode.apply(null, combined));
+            // Chunked conversion to prevent call stack size exceeded error on large images
+            let binary = '';
+            const chunkSize = 8192;
+            for (let i = 0; i < combined.length; i += chunkSize) {
+                const chunk = combined.subarray(i, i + chunkSize);
+                binary += String.fromCharCode.apply(null, chunk);
+            }
+
+            return btoa(binary);
         }
 
         async function decryptData(base64Payload, password) {
