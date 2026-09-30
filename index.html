@@ -8,13 +8,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-        /* Prevent iOS zoom on input focus by ensuring 16px font size */
         input, select, textarea { font-size: 16px !important; }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 h-full flex flex-col min-h-screen p-0">
 
-    <!-- App wrapper -->
     <div class="w-full h-full bg-slate-50 flex flex-col overflow-hidden relative flex-1">
 
     <header class="bg-indigo-600 text-white shadow-md py-4 px-4 flex justify-between items-center shrink-0">
@@ -137,7 +135,6 @@
     </div>
 
     <script>
-        // Preview handling with automatic compression/resizing to fit Google Sheets cell limit (max 50,000 chars)
         const imageFileInput = document.getElementById('imageFile');
         let selectedFileBase64 = null;
 
@@ -174,7 +171,6 @@
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
 
-                    // Compress to JPEG with 0.7 quality to ensure Base64 fits within sheet limits
                     selectedFileBase64 = canvas.toDataURL('image/jpeg', 0.7);
                     document.getElementById('encPreview').src = selectedFileBase64;
                     document.getElementById('encPreviewContainer').classList.remove('hidden');
@@ -184,13 +180,22 @@
             reader.readAsDataURL(file);
         });
 
-        // Crypto helper functions using Web Crypto API (AES-GCM)
+        // Safe Web Crypto API getter with secure context check
+        function getSubtleCrypto() {
+            const subtle = window.crypto && window.crypto.subtle;
+            if (!subtle) {
+                throw new Error("お使いのブラウザ環境では暗号化機能（Web Crypto API）を利用できません。HTTPS接続またはlocalhost（セキュアコンテキスト）でお試しください。");
+            }
+            return subtle;
+        }
+
         async function deriveKey(password, salt) {
+            const subtle = getSubtleCrypto();
             const enc = new TextEncoder();
-            const keyMaterial = await window.subtle.importKey(
+            const keyMaterial = await subtle.importKey(
                 "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
             );
-            return window.subtle.deriveKey(
+            return subtle.deriveKey(
                 { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
                 keyMaterial,
                 { name: "AES-GCM", length: 256 },
@@ -200,18 +205,18 @@
         }
 
         async function encryptData(secretMessage, password) {
+            const subtle = getSubtleCrypto();
             const salt = window.crypto.getRandomValues(new Uint8Array(16));
             const iv = window.crypto.getRandomValues(new Uint8Array(12));
             const key = await deriveKey(password, salt);
             const encoded = new TextEncoder().encode(secretMessage);
-            const encrypted = await window.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, encoded);
+            const encrypted = await subtle.encrypt({ name: "AES-GCM", iv: iv }, key, encoded);
 
             const combined = new Uint8Array(salt.byteLength + iv.byteLength + encrypted.byteLength);
             combined.set(salt, 0);
             combined.set(iv, salt.byteLength);
             combined.set(new Uint8Array(encrypted), salt.byteLength + iv.byteLength);
 
-            // Chunked conversion to prevent call stack size exceeded error on large images
             let binary = '';
             const chunkSize = 8192;
             for (let i = 0; i < combined.length; i += chunkSize) {
@@ -223,6 +228,7 @@
         }
 
         async function decryptData(base64Payload, password) {
+            const subtle = getSubtleCrypto();
             const binaryString = atob(base64Payload);
             const len = binaryString.length;
             const bytes = new Uint8Array(len);
@@ -235,11 +241,10 @@
             const encrypted = bytes.slice(28);
 
             const key = await deriveKey(password, salt);
-            const decrypted = await window.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, encrypted);
+            const decrypted = await subtle.decrypt({ name: "AES-GCM", iv: iv }, key, encrypted);
             return new TextDecoder().decode(decrypted);
         }
 
-        // Encryption and Save Handler
         async function encryptAndSave() {
             const password = document.getElementById('encPassword').value;
             if (!password) { alertBox("パスワードを入力してください。"); return; }
@@ -247,7 +252,7 @@
 
             try {
                 const encryptedPayload = await encryptData(selectedFileBase64, password);
-                const gasUrl = document.getElementById('gasUrl').value;
+                const gasUrl = document.getElementById('gasUrl').value.trim();
 
                 if (!gasUrl) {
                     let count = 1;
@@ -285,7 +290,7 @@
                 }
             } catch (err) {
                 console.error(err);
-                let jpMsg = err.message;
+                let jpMsg = err.message || "予期せぬエラーが発生しました。";
                 if (jpMsg.includes('Failed to fetch') || jpMsg.includes('NetworkError')) {
                     jpMsg = "ネットワークエラーが発生しました。GAS URLやインターネット接続を確認してください。";
                 }
@@ -293,21 +298,20 @@
             }
         }
 
-        // Load and Decrypt Handler
         async function loadAndDecrypt() {
             const password = document.getElementById('decPassword').value;
-            const recordId = document.getElementById('recordId').value;
+            const recordId = document.getElementById('recordId').value.trim();
             if (!password || !recordId) { alertBox("パスワードとレコードIDを入力してください。"); return; }
 
             try {
                 let encryptedPayload = "";
-                const gasUrl = document.getElementById('gasUrl').value;
+                const gasUrl = document.getElementById('gasUrl').value.trim();
 
                 if (!gasUrl) {
                     encryptedPayload = localStorage.getItem(recordId);
                     if (!encryptedPayload) { alertBox("指定されたIDのデータがローカルに見つかりません。"); return; }
                 } else {
-                    const response = await fetch(`${gasUrl}?id=${recordId}`);
+                    const response = await fetch(`${gasUrl}?id=${encodeURIComponent(recordId)}`);
                     const text = await response.text();
                     let result;
                     try {
@@ -332,19 +336,18 @@
             } catch (err) {
                 console.error(err);
                 let jpMsg = "復号化に失敗しました。パスワードが間違っているか、データが破損しています。";
-                if (err.message && (err.message.includes('fetch') || err.message.includes('Network'))) {
-                    jpMsg = "ネットワークエラーが発生しました。GAS URLやインターネット接続を確認してください。";
+                if (err.message && (err.message.includes('fetch') || err.message.includes('Network') || err.message.includes('Web Crypto') || err.message.includes('サブティル'))) {
+                    jpMsg = err.message;
                 }
                 alertBox(jpMsg);
             }
         }
 
-        // Fetch Records List Handler
         async function fetchRecordsList() {
             const tbody = document.getElementById('recordsTableBody');
             tbody.innerHTML = `<tr><td colspan="3" class="p-3 text-center text-slate-400 text-xs">取得中...</td></tr>`;
 
-            const gasUrl = document.getElementById('gasUrl').value;
+            const gasUrl = document.getElementById('gasUrl').value.trim();
             let records = [];
 
             try {
