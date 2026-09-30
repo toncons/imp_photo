@@ -257,9 +257,18 @@
 
                 const response = await fetch(gasUrl, {
                     method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'save', payload: encryptedPayload })
                 });
-                const result = await response.json();
+                
+                const text = await response.text();
+                let result;
+                try {
+                    result = JSON.parse(text);
+                } catch (e) {
+                    throw new Error("GASからの応答が無効です。Apps Scriptのデプロイ設定で「アクセスできるユーザー」が「全員」になっているか確認してください。");
+                }
+
                 if (result.status === 'success') {
                     alertBox("保存成功！ レコードID: " + result.id);
                     fetchRecordsList();
@@ -268,7 +277,7 @@
                 }
             } catch (err) {
                 console.error(err);
-                alertBox("暗号化または通信エラーが発生しました。");
+                alertBox("エラー: " + err.message);
             }
         }
 
@@ -287,7 +296,14 @@
                     if (!encryptedPayload) { alertBox("指定されたIDのデータがローカルに見つかりません。"); return; }
                 } else {
                     const response = await fetch(`${gasUrl}?id=${recordId}`);
-                    const result = await response.json();
+                    const text = await response.text();
+                    let result;
+                    try {
+                        result = JSON.parse(text);
+                    } catch (e) {
+                        throw new Error("GASからの応答が無効です。デプロイ設定をご確認ください。");
+                    }
+
                     if (result.status === 'success') {
                         encryptedPayload = result.payload;
                     } else {
@@ -329,7 +345,14 @@
                     }
                 } else {
                     const response = await fetch(`${gasUrl}?action=list`);
-                    const result = await response.json();
+                    const text = await response.text();
+                    let result;
+                    try {
+                        result = JSON.parse(text);
+                    } catch (e) {
+                        throw new Error("GASからの応答が無効です。デプロイ設定（アクセス権限）をご確認ください。");
+                    }
+
                     if (result.status === 'success') {
                         records = result.records || [];
                     } else {
