@@ -285,7 +285,11 @@
                 }
             } catch (err) {
                 console.error(err);
-                alertBox("エラー: " + err.message);
+                let jpMsg = err.message;
+                if (jpMsg.includes('Failed to fetch') || jpMsg.includes('NetworkError')) {
+                    jpMsg = "ネットワークエラーが発生しました。GAS URLやインターネット接続を確認してください。";
+                }
+                alertBox("エラー: " + jpMsg);
             }
         }
 
@@ -327,7 +331,11 @@
                 alertBox("復号化に成功しました！");
             } catch (err) {
                 console.error(err);
-                alertBox("復号化に失敗しました。パスワードが間違っているか、データが破損しています。");
+                let jpMsg = "復号化に失敗しました。パスワードが間違っているか、データが破損しています。";
+                if (err.message && (err.message.includes('fetch') || err.message.includes('Network'))) {
+                    jpMsg = "ネットワークエラーが発生しました。GAS URLやインターネット接続を確認してください。";
+                }
+                alertBox(jpMsg);
             }
         }
 
@@ -387,7 +395,7 @@
 
             } catch (err) {
                 console.error(err);
-                tbody.innerHTML = `<tr><td colspan="3" class="p-3 text-center text-rose-500 text-xs">取得失敗 (GAS URLを確認)</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="3" class="p-3 text-center text-rose-500 text-xs">取得失敗 (GAS URLやネットワークをご確認ください)</td></tr>`;
             }
         }
 
