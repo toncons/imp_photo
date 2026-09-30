@@ -20,7 +20,7 @@
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
             <h1 class="text-base font-bold truncate">Secure Vault</h1>
         </div>
-        <div class="text-[11px] bg-indigo-700 px-2.5 py-1 rounded-full font-medium">AES-GCM</div>
+        <div class="text-[11px] bg-indigo-700 px-2.5 py-1 rounded-full font-medium">AES-GCM / 堅牢版</div>
     </header>
 
     <main class="flex-1 p-4 space-y-4 overflow-y-auto">
@@ -49,7 +49,7 @@
             </div>
 
             <div class="mt-4 pt-3 border-t border-slate-100">
-                <button onclick="encryptAndSave()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-xl transition shadow-sm text-sm active:scale-95">
+                <button id="encBtn" onclick="encryptAndSave()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-xl transition shadow-sm text-sm active:scale-95">
                     暗号化してシートに保存
                 </button>
             </div>
@@ -74,7 +74,7 @@
 
                     <div id="decPreviewContainer" class="hidden mt-3 text-center">
                         <p class="text-[11px] text-slate-500 mb-1">復号化プレビュー:</p>
-                        <img id="decPreview" class="max-h-32 rounded-lg border object-contain mx-auto" alt="Decrypted Preview" onerror="alertBox('画像のプレビュー表示に失敗しました。データが破損しているか、パスワードが間違っている可能性があります。');">
+                        <img id="decPreview" class="max-h-32 rounded-lg border object-contain mx-auto" alt="Decrypted Preview">
                         <div class="mt-2">
                             <a id="downloadBtn" onclick="downloadDecryptedImage(event)" class="text-xs text-indigo-600 hover:underline font-medium cursor-pointer">画像をダウンロード</a>
                         </div>
@@ -83,7 +83,7 @@
             </div>
 
             <div class="mt-4 pt-3 border-t border-slate-100">
-                <button onclick="loadAndDecrypt()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-4 rounded-xl transition shadow-sm text-sm active:scale-95">
+                <button id="decBtn" onclick="loadAndDecrypt()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-4 rounded-xl transition shadow-sm text-sm active:scale-95">
                     シートから取得して復号化
                 </button>
             </div>
@@ -140,9 +140,13 @@
         let currentDecryptedDataUrl = null;
 
         window.addEventListener('DOMContentLoaded', () => {
-            const savedUrl = localStorage.getItem('saved_gas_url');
-            if (savedUrl) {
-                document.getElementById('gasUrl').value = savedUrl;
+            try {
+                const savedUrl = localStorage.getItem('saved_gas_url');
+                if (savedUrl) {
+                    document.getElementById('gasUrl').value = savedUrl;
+                }
+            } catch (e) {
+                console.error("LocalStorage load error:", e);
             }
         });
 
@@ -151,13 +155,19 @@
             if (!file) return;
 
             const reader = new FileReader();
+            reader.onerror = () => {
+                alertBox("画像ファイルの読み込みに失敗しました。");
+            };
             reader.onload = (uploadEvent) => {
                 const img = new Image();
+                img.onerror = () => {
+                    alertBox("選択されたファイルは有効な画像ではありません。");
+                };
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
                     let width = img.width;
                     let height = img.height;
-                    const maxDim = 800;
+                    const maxDim = 800; // 圧縮・制限サイズ
 
                     if (width > height && width > maxDim) {
                         height = Math.round((height * maxDim) / width);
@@ -182,11 +192,10 @@
         });
 
         function getSubtleCrypto() {
-            const subtle = window.crypto && window.crypto.subtle;
-            if (!subtle) {
-                throw new Error("お使いのブラウザ環境では暗号化機能（Web Crypto API）を利用できません。HTTPS接続またはlocalhost（セキュアコンテキスト）でお試しください。");
+            if (!window.crypto || !window.crypto.subtle) {
+                throw new Error("お使いのブラウザ環境では暗号化機能（Web Crypto API）を利用できません。HTTPS接続またはlocalhost環境で再度お試しください。");
             }
-            return subtle;
+            return window.crypto.subtle;
         }
 
         async function deriveKey(password, salt) {
@@ -229,26 +238,59 @@
 
         async function decryptData(base64Payload, password) {
             const subtle = getSubtleCrypto();
-            const binaryString = atob(base64Payload);
+            let binaryString;
+            try {
+                binaryString = atob(base64Payload);
+            } catch (e) {
+                throw new Error("暗号データの形式が正しくありません（Base64デコードエラー）。");
+            }
+
             const len = binaryString.length;
             const bytes = new Uint8Array(len);
             for (let i = 0; i < len; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
             }
 
+            if (bytes.length < 28) {
+                throw new Error("データが破損しているか、不完全なデータです。");
+            }
+
             const salt = bytes.slice(0, 16);
             const iv = bytes.slice(16, 28);
             const encrypted = bytes.slice(28);
 
-            const key = await deriveKey(password, salt);
-            const decrypted = await subtle.decrypt({ name: "AES-GCM", iv: iv }, key, encrypted);
-            return new TextDecoder().decode(decrypted);
+            try {
+                const key = await deriveKey(password, salt);
+                const decrypted = await subtle.decrypt({ name: "AES-GCM", iv: iv }, key, encrypted);
+                return new TextDecoder().decode(decrypted);
+            } catch (err) {
+                throw new Error("パスワードが間違っているか、データが破損しています。");
+            }
+        }
+
+        async function parseGasResponse(response) {
+            if (!response.ok) {
+                throw new Error(`サーバーエラーが発生しました (HTTP ${response.status})。GASのデプロイ設定をご確認ください。`);
+            }
+            const text = await response.text();
+            if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+                throw new Error("GASからの応答がHTMLです。Apps Scriptのデプロイ設定で「アクセスできるユーザー」が「全員」になっているかご確認ください。");
+            }
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                throw new Error("GASからのJSON応答の解析に失敗しました。");
+            }
         }
 
         async function encryptAndSave() {
             const password = document.getElementById('encPassword').value;
-            if (!password) { alertBox("パスワードを入力してください。"); return; }
-            if (!selectedFileBase64) { alertBox("画像を選択してください。"); return; }
+            if (!password) { alertBox("暗号化パスワードを入力してください。"); return; }
+            if (!selectedFileBase64) { alertBox("画像ファイルを選択してください。"); return; }
+
+            const btn = document.getElementById('encBtn');
+            btn.disabled = true;
+            btn.innerText = "暗号化・保存中...";
 
             try {
                 const encryptedPayload = await encryptData(selectedFileBase64, password);
@@ -263,7 +305,7 @@
                     const mockId = "gas" + ("00" + count).slice(-3);
                     localStorage.setItem(mockId, encryptedPayload);
                     localStorage.setItem(mockId + "_time", new Date().toLocaleString());
-                    alertBox("GAS URL未入力のためローカルに保存しました。\nレコードID: " + mockId);
+                    alertBox("GAS URL未入力のためローカル保存しました。\nレコードID: " + mockId);
                     fetchRecordsList();
                     return;
                 }
@@ -274,34 +316,31 @@
                     body: JSON.stringify({ action: 'save', payload: encryptedPayload })
                 });
                 
-                const text = await response.text();
-                let result;
-                try {
-                    result = JSON.parse(text);
-                } catch (e) {
-                    throw new Error("GASからの応答が無効です。Apps Scriptのデプロイ設定で「アクセスできるユーザー」が「全員」になっているか確認してください。");
-                }
+                const result = await parseGasResponse(response);
 
                 if (result.status === 'success') {
                     alertBox("保存成功！ レコードID: " + result.id);
                     fetchRecordsList();
                 } else {
-                    alertBox("保存失敗: " + result.message);
+                    alertBox("保存失敗: " + (result.message || "不明なエラー"));
                 }
             } catch (err) {
                 console.error(err);
-                let jpMsg = err.message || "予期せぬエラーが発生しました。";
-                if (jpMsg.includes('Failed to fetch') || jpMsg.includes('NetworkError')) {
-                    jpMsg = "ネットワークエラーが発生しました。GAS URLやインターネット接続を確認してください。";
-                }
-                alertBox("エラー: " + jpMsg);
+                alertBox(err.message || "予期せぬエラーが発生しました。");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "暗号化してシートに保存";
             }
         }
 
         async function loadAndDecrypt() {
             const password = document.getElementById('decPassword').value;
             const recordId = document.getElementById('recordId').value.trim();
-            if (!password || !recordId) { alertBox("パスワードとレコードIDを入力してください。"); return; }
+            if (!password || !recordId) { alertBox("復号化パスワードとレコードIDを入力してください。"); return; }
+
+            const btn = document.getElementById('decBtn');
+            btn.disabled = true;
+            btn.innerText = "取得・復号化中...";
 
             try {
                 let encryptedPayload = "";
@@ -309,42 +348,37 @@
 
                 if (!gasUrl) {
                     encryptedPayload = localStorage.getItem(recordId);
-                    if (!encryptedPayload) { alertBox("指定されたIDのデータがローカルに見つかりません。"); return; }
+                    if (!encryptedPayload) { throw new Error("指定されたIDのデータがローカルに見つかりません。"); }
                 } else {
                     const response = await fetch(`${gasUrl}?id=${encodeURIComponent(recordId)}`);
-                    const text = await response.text();
-                    let result;
-                    try {
-                        result = JSON.parse(text);
-                    } catch (e) {
-                        throw new Error("GASからの応答が無効です。デプロイ設定をご確認ください。");
-                    }
+                    const result = await parseGasResponse(response);
 
                     if (result.status === 'success') {
                         encryptedPayload = result.payload;
                     } else {
-                        alertBox("データ取得失敗: " + result.message);
-                        return;
+                        throw new Error("データ取得失敗: " + (result.message || "レコードが見つかりません"));
                     }
                 }
 
                 const decryptedBase64 = await decryptData(encryptedPayload, password);
                 if (!decryptedBase64 || !decryptedBase64.startsWith('data:image/')) {
-                    throw new Error("復号化されたデータが有効な画像形式ではありません。パスワードが間違っている可能性があります。");
+                    throw new Error("復号化されたデータが有効な画像形式ではありません。");
                 }
 
                 currentDecryptedDataUrl = decryptedBase64;
                 const decPreview = document.getElementById('decPreview');
+                decPreview.onerror = () => {
+                    alertBox("復号化された画像のプレビュー表示に失敗しました。");
+                };
                 decPreview.src = decryptedBase64;
                 document.getElementById('decPreviewContainer').classList.remove('hidden');
                 alertBox("復号化に成功しました！");
             } catch (err) {
                 console.error(err);
-                let jpMsg = "復号化に失敗しました。パスワードが間違っているか、データが破損しています。";
-                if (err.message && (err.message.includes('fetch') || err.message.includes('Network') || err.message.includes('Web Crypto') || err.message.includes('有効な画像形式'))) {
-                    jpMsg = err.message;
-                }
-                alertBox(jpMsg);
+                alertBox(err.message || "復号化に失敗しました。");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "シートから取得して復号化";
             }
         }
 
@@ -354,12 +388,17 @@
                 alertBox("ダウンロードする画像データがありません。先に復号化を実行してください。");
                 return;
             }
-            const a = document.createElement('a');
-            a.href = currentDecryptedDataUrl;
-            a.download = 'decrypted_image.jpg';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            try {
+                const a = document.createElement('a');
+                a.href = currentDecryptedDataUrl;
+                a.download = 'decrypted_image.jpg';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } catch (err) {
+                console.error(err);
+                alertBox("画像のダウンロードに失敗しました。");
+            }
         }
 
         async function fetchRecordsList() {
@@ -371,7 +410,6 @@
 
             try {
                 if (!gasUrl) {
-                    records = [];
                     for (let i = 0; i < localStorage.length; i++) {
                         const key = localStorage.key(i);
                         if (key.startsWith('gas') && !key.endsWith('_time')) {
@@ -383,18 +421,12 @@
                     }
                 } else {
                     const response = await fetch(`${gasUrl}?action=list`);
-                    const text = await response.text();
-                    let result;
-                    try {
-                        result = JSON.parse(text);
-                    } catch (e) {
-                        throw new Error("GASからの応答が無効です。デプロイ設定（アクセス権限）をご確認ください。");
-                    }
+                    const result = await parseGasResponse(response);
 
                     if (result.status === 'success') {
                         records = result.records || [];
                     } else {
-                        throw new Error(result.message || '取得に失敗しました');
+                        throw new Error(result.message || '一覧の取得に失敗しました');
                     }
                 }
 
@@ -417,7 +449,7 @@
 
             } catch (err) {
                 console.error(err);
-                tbody.innerHTML = `<tr><td colspan="3" class="p-3 text-center text-rose-500 text-xs">取得失敗 (GAS URLやネットワークをご確認ください)</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="3" class="p-3 text-center text-rose-500 text-xs">${err.message || '取得失敗'}</td></tr>`;
             }
         }
 
@@ -427,26 +459,34 @@
         }
 
         function saveGasUrl() {
-            const url = document.getElementById('gasUrl').value.trim();
-            localStorage.setItem('saved_gas_url', url);
-            alertBox("GAS URLを保存しました。");
+            try {
+                const url = document.getElementById('gasUrl').value.trim();
+                localStorage.setItem('saved_gas_url', url);
+                alertBox("GAS URLを保存しました。");
+            } catch (e) {
+                alertBox("GAS URLの保存に失敗しました。");
+            }
         }
 
         function alertBox(message) {
-            const existing = document.getElementById('customToast');
-            if (existing) existing.remove();
+            try {
+                const existing = document.getElementById('customToast');
+                if (existing) existing.remove();
 
-            const toast = document.createElement('div');
-            toast.id = 'customToast';
-            toast.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-lg z-50 transition-all opacity-0 max-w-xs text-center whitespace-pre-wrap';
-            toast.innerText = message;
-            document.body.appendChild(toast);
+                const toast = document.createElement('div');
+                toast.id = 'customToast';
+                toast.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-lg z-50 transition-all opacity-0 max-w-xs text-center whitespace-pre-wrap';
+                toast.innerText = message;
+                document.body.appendChild(toast);
 
-            setTimeout(() => toast.classList.remove('opacity-0'), 10);
-            setTimeout(() => {
-                toast.classList.add('opacity-0');
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
+                setTimeout(() => toast.classList.remove('opacity-0'), 10);
+                setTimeout(() => {
+                    toast.classList.add('opacity-0');
+                    setTimeout(() => toast.remove(), 300);
+                }, 3500);
+            } catch (e) {
+                console.error(message);
+            }
         }
     </script>
 </body>
