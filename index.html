@@ -125,8 +125,11 @@
     <footer class="bg-white border-t border-slate-200 py-3 px-4 text-xs text-slate-500 shrink-0">
         <div class="flex flex-col gap-2">
             <div>
-                <span class="text-[11px]">GAS URL: </span>
-                <input type="text" id="gasUrl" placeholder="https://script.google.com/..." class="px-2 py-1 border rounded ml-1 w-full text-xs mt-1">
+                <span class="text-[11px] font-medium text-slate-700">GAS URL:</span>
+                <div class="flex gap-2 mt-1">
+                    <input type="text" id="gasUrl" placeholder="https://script.google.com/..." class="px-2 py-1.5 border rounded-lg w-full text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <button onclick="saveGasUrl()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium shrink-0 transition shadow-sm">保存</button>
+                </div>
             </div>
         </div>
     </footer>
@@ -137,6 +140,13 @@
         // Preview handling with automatic compression/resizing to fit Google Sheets cell limit (max 50,000 chars)
         const imageFileInput = document.getElementById('imageFile');
         let selectedFileBase64 = null;
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedUrl = localStorage.getItem('saved_gas_url');
+            if (savedUrl) {
+                document.getElementById('gasUrl').value = savedUrl;
+            }
+        });
 
         imageFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
@@ -353,6 +363,12 @@
         function selectRecord(id) {
             document.getElementById('recordId').value = id;
             document.getElementById('decPassword').focus();
+        }
+
+        function saveGasUrl() {
+            const url = document.getElementById('gasUrl').value.trim();
+            localStorage.setItem('saved_gas_url', url);
+            alertBox("GAS URLを保存しました。");
         }
 
         function alertBox(message) {
